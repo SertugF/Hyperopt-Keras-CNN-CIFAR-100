@@ -14,13 +14,6 @@ import os
 import traceback
 
 
-__author__ = "Guillaume Chevalier"
-__copyright__ = "Copyright 2017, Guillaume Chevalier"
-__license__ = "MIT License"
-__notice__ = (
-    "Some further edits by Guillaume Chevalier are made on "
-    "behalf of Vooban Inc. and belongs to Vooban Inc. ")
-# See: https://github.com/Vooban/Hyperopt-Keras-CNN-CIFAR-100/blob/master/LICENSE"
 
 
 space = {
@@ -31,7 +24,7 @@ space = {
     # L2 weight decay:
     'l2_weight_reg_mult': hp.loguniform('l2_weight_reg_mult', -1.3, 1.3),
     # Batch size fed for each gradient update
-    'batch_size': hp.quniform('batch_size', 100, 450, 5),
+    'batch_size': hp.quniform('batch_size', 8, 32, 2),
     # Choice of optimizer:
     'optimizer': hp.choice('optimizer', ['Adam', 'Nadam', 'RMSprop']),
     # Coarse labels importance for weights updates:
@@ -106,15 +99,19 @@ def plot_base_model():
         'fc_dropout_drop_proba': 0.3,
         'use_BN': True,
 
-        'first_conv': 4,
-        'residual': 4,
+        #'first_conv': 4, # reduce
+        'first_conv': 3,
+        #'residual': 4, # reduce
+        'residual': 2,
         'conv_hiddn_units_mult': 1.0,
-        'nb_conv_pool_layers': 3,
+        #'nb_conv_pool_layers': 3,
+        'nb_conv_pool_layers': 2,
         'conv_pool_res_start_idx': 0.0,
         'pooling_type': 'inception',
-        'conv_kernel_size': 3.0,
-        'res_conv_kernel_size': 3.0,
-
+        #'conv_kernel_size': 3.0,
+        'conv_kernel_size': 2.0,
+        #'res_conv_kernel_size': 3.0,
+        'res_conv_kernel_size': 2.0,
         'fc_units_1_mult': 1.0,
         'one_more_fc': 1.0,
         'activation': 'elu'
