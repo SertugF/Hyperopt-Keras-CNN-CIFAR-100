@@ -5,7 +5,7 @@ from utils import print_json
 
 import keras
 from keras.datasets import cifar100  # from keras.datasets import cifar10
-from keras.layers.core import K  # import keras.backend as K
+import keras.backend as K  # import keras.backend as K
 from keras.optimizers import Adam, Nadam, RMSprop
 import tensorflow as tf
 from hyperopt import STATUS_OK, STATUS_FAIL
@@ -13,15 +13,9 @@ from hyperopt import STATUS_OK, STATUS_FAIL
 import uuid
 import traceback
 import os
+import numpy as np
 
 
-__author__ = "Guillaume Chevalier"
-__copyright__ = "Copyright 2017, Guillaume Chevalier"
-__license__ = "MIT License"
-__notice__ = (
-    "Some further edits by Guillaume Chevalier are made on "
-    "behalf of Vooban Inc. and belongs to Vooban Inc. ")
-# See: https://github.com/Vooban/Hyperopt-Keras-CNN-CIFAR-100/blob/master/LICENSE"
 
 
 TENSORBOARD_DIR = "TensorBoard/"
@@ -29,26 +23,68 @@ WEIGHTS_DIR = "weights/"
 
 
 NB_CHANNELS = 3
-IMAGE_BORDER_LENGTH = 32
-# NB_CLASSES = 10
-NB_CLASSES_FINE = 100
-NB_CLASSES_COARSE = 20
+IMAGE_BORDER_LENGTH = 224 # 32 change with 224 our image size
+NB_CLASSES = 2 # 10 change with 2 our classes. 0 = haploid and 1 = diploid
+#NB_CLASSES_FINE = 100
+#NB_CLASSES_COARSE = 20
 
-# (x_train, y_train), (x_test, y_test) = cifar10.load_data()
-(_, y_train_c), (_, y_test_coarse) = cifar100.load_data(label_mode='coarse')
-(x_train, y_train), (x_test, y_test) = cifar100.load_data(label_mode='fine')
-x_train = x_train.astype('float32') / 255.0 - 0.5
+#(x_train, y_train), (x_test, y_test) = cifar10.load_data() # we gonna load our data
+
+# Data\train\
+# Data\test\
+
+
+
+train_dir = 'Data/train/'
+test_dir = 'Data/test/'
+
+img_height = 224
+img_width = 224
+
+train_ds = tf.keras.preprocessing.image_dataset_from_directory(
+    train_dir,
+    seed=123,
+    image_size=(img_height, img_width))
+
+test_ds = tf.keras.preprocessing.image_dataset_from_directory(
+    test_dir,
+    seed=123,
+    image_size=(img_height, img_width))
+
+for images , labels in train_ds.take(-1): # -1 for all
+   numpy_imagesTrain = images.numpy()
+   numpy_labelsTrain = labels.numpy()
+
+for images , labels in test_ds.take(-1): # -1 for all
+    numpy_imagesTest = images.numpy()
+    numpy_labelsTest = labels.numpy()
+
+x_train = numpy_imagesTrain
+y_train = numpy_labelsTrain
+x_test = numpy_imagesTest
+y_test = numpy_labelsTest
+
+#test.
+
+
+#(_, y_train_c), (_, y_test_coarse) = cifar100.load_data(label_mode='coarse')
+#(x_train, y_train), (x_test, y_test) = cifar100.load_data(label_mode='fine')
+x_train = x_train.astype('float32') / 255.0 - 0.5 # why minus 0.5 ? Because we want to center the data around 0 that 
+# is the mean of the data. This is a common practice in machine learning.
 x_test = x_test.astype('float32') / 255.0 - 0.5
-y_train = keras.utils.to_categorical(y_train, NB_CLASSES_FINE)
-y_test = keras.utils.to_categorical(y_test, NB_CLASSES_FINE)
-y_train_c = keras.utils.to_categorical(y_train_c, NB_CLASSES_COARSE)
-y_test_coarse = keras.utils.to_categorical(y_test_coarse, NB_CLASSES_COARSE)
+y_train = keras.utils.to_categorical(y_train, NB_CLASSES)
+y_test = keras.utils.to_categorical(y_test, NB_CLASSES)
+#y_train_c = keras.utils.to_categorical(y_train_c, NB_CLASSES_COARSE)  # not needed
+#y_test_coarse = keras.utils.to_categorical(y_test_coarse, NB_CLASSES_COARSE) # not needed
 
 # You may want to reduce this considerably if you don't have a killer GPU:
-EPOCHS = 100
-STARTING_L2_REG = 0.0007
+#EPOCHS = 100
+#use lower epochs for testing
+EPOCHS = 4
 
-OPTIMIZER_STR_TO_CLASS = {
+STARTING_L2_REG = 0.0007 # starting learning rate for L2 regularization
+
+OPTIMIZER_STR_TO_CLASS = { # optimizer string to class mapping for hyperopt search space definition 
     'Adam': Adam,
     'Nadam': Nadam,
     'RMSprop': RMSprop
@@ -118,18 +154,21 @@ def build_and_train(hype_space, save_best_weights=False, log_for_tensorboard=Fal
     # Train net:
     history = model.fit(
         [x_train],
-        [y_train, y_train_c],
+        #[y_train, y_train_c], # y_train_c not needed
+        [y_train],
         batch_size=int(hype_space['batch_size']),
         epochs=EPOCHS,
         shuffle=True,
         verbose=1,
         callbacks=callbacks,
-        validation_data=([x_test], [y_test, y_test_coarse])
+        # validation_data=([x_test], [y_test, y_test_coarse]) # y_test_coarse not needed
+        validation_data=([x_test], [y_test])
     ).history
 
     # Test net:
     K.set_learning_phase(0)
-    score = model.evaluate([x_test], [y_test, y_test_coarse], verbose=0)
+    #score = model.evaluate([x_test], [y_test, y_test_coarse], verbose=0) # y_test_coarse not needed
+    score = model.evaluate([x_test], [y_test], verbose=0)
     max_acc = max(history['val_fine_outputs_acc'])
 
     model_name = "model_{}_{}".format(str(max_acc), str(uuid.uuid4())[:5])
@@ -194,21 +233,21 @@ def build_model(hype_space):
     for i in range(hype_space['nb_conv_pool_layers']):
         print(i)
         print(n_filters)
-        print(current_layer._keras_shape)
+        print(current_layer.shape) # keras_shape is old. Use shape instead.
 
         current_layer = convolution(current_layer, n_filters, hype_space)
         if hype_space['use_BN']:
             current_layer = bn(current_layer)
-        print(current_layer._keras_shape)
+        print(current_layer) # curerent_layer.keras is old. Use current_layer instead. Tflow 2.0 port.
 
         deep_enough_for_res = hype_space['conv_pool_res_start_idx']
         if i >= deep_enough_for_res and hype_space['residual'] is not None:
             current_layer = residual(current_layer, n_filters, hype_space)
-            print(current_layer._keras_shape)
+            print(current_layer)
 
         current_layer = auto_choose_pooling(
             current_layer, n_filters, hype_space)
-        print(current_layer._keras_shape)
+        print(current_layer) # curerent_layer.keras is old. Use current_layer instead. Tflow 2.0 port.
 
         current_layer = dropout(current_layer, hype_space)
 
@@ -216,7 +255,7 @@ def build_model(hype_space):
 
     # Fully Connected (FC) part:
     current_layer = keras.layers.core.Flatten()(current_layer)
-    print(current_layer._keras_shape)
+    print(current_layer) # curerent_layer.keras is old. Use current_layer instead. Tflow 2.0 port.
 
     current_layer = keras.layers.core.Dense(
         units=int(1000 * hype_space['fc_units_1_mult']),
@@ -224,7 +263,7 @@ def build_model(hype_space):
         kernel_regularizer=keras.regularizers.l2(
             STARTING_L2_REG * hype_space['l2_weight_reg_mult'])
     )(current_layer)
-    print(current_layer._keras_shape)
+    print(current_layer) # curerent_layer.keras is old. Use current_layer instead. Tflow 2.0 port.
 
     current_layer = dropout(
         current_layer, hype_space, for_convolution_else_fc=False)
@@ -236,39 +275,50 @@ def build_model(hype_space):
             kernel_regularizer=keras.regularizers.l2(
                 STARTING_L2_REG * hype_space['l2_weight_reg_mult'])
         )(current_layer)
-        print(current_layer._keras_shape)
+        print(current_layer) # curerent_layer.keras is old. Use current_layer instead. Tflow 2.0 port.
 
         current_layer = dropout(
             current_layer, hype_space, for_convolution_else_fc=False)
 
-    # Two heads as outputs:
-    fine_outputs = keras.layers.core.Dense(
-        units=NB_CLASSES_FINE,
+    # Two heads as outputs:    ############################# needs change for single output.###########
+    
+    outputs = keras.layers.core.Dense(
+        units=NB_CLASSES,
         activation="sigmoid",
         kernel_regularizer=keras.regularizers.l2(
             STARTING_L2_REG * hype_space['l2_weight_reg_mult']),
-        name='fine_outputs'
+        name='outputs'
     )(current_layer)
 
-    coarse_outputs = keras.layers.core.Dense(
-        units=NB_CLASSES_COARSE,
-        activation="sigmoid",
-        kernel_regularizer=keras.regularizers.l2(
-            STARTING_L2_REG * hype_space['l2_weight_reg_mult']),
-        name='coarse_outputs'
-    )(current_layer)
+    
+    # fine_outputs = keras.layers.core.Dense(
+    #     units=NB_CLASSES_FINE,
+    #     activation="sigmoid",
+    #     kernel_regularizer=keras.regularizers.l2(
+    #         STARTING_L2_REG * hype_space['l2_weight_reg_mult']),
+    #     name='fine_outputs'
+    # )(current_layer)
+
+    # coarse_outputs = keras.layers.core.Dense(
+    #     units=NB_CLASSES_COARSE,
+    #     activation="sigmoid",
+    #     kernel_regularizer=keras.regularizers.l2(
+    #         STARTING_L2_REG * hype_space['l2_weight_reg_mult']),
+    #     name='coarse_outputs'
+    # )(current_layer)                ############################# needs change for single output.###########
 
     # Finalize model:
     model = keras.models.Model(
         inputs=[input_layer],
-        outputs=[fine_outputs, coarse_outputs]
+        #outputs=[fine_outputs, coarse_outputs] # needs change for single output. # coarse_outputs not needed for single output.
+        outputs=[outputs] 
     )
     model.compile(
         optimizer=OPTIMIZER_STR_TO_CLASS[hype_space['optimizer']](
             lr=0.001 * hype_space['lr_rate_mult']
         ),
         loss='categorical_crossentropy',
-        loss_weights=[1.0, hype_space['coarse_labels_weight']],
+        loss_weights=[1.0, hype_space['coarse_labels_weight']], #??
         metrics=['accuracy']
     )
     return model
@@ -289,8 +339,8 @@ def random_image_mirror_left_right(input_layer):
 
 def bn(prev_layer):
     """Perform batch normalisation."""
-    return keras.layers.normalization.BatchNormalization()(prev_layer)
-
+    return keras.layers.BatchNormalization()(prev_layer) # keras.layers.normalization has no 
+    # attribuate BatchNormalization., use instead keras.layers.BatchNormalization (tflow2)
 
 def dropout(prev_layer, hype_space, for_convolution_else_fc=True):
     """Add dropout after a layer."""
