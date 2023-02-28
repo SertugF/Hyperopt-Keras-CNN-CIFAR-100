@@ -10,6 +10,8 @@ from keras.optimizers import Adam, Nadam, RMSprop
 import tensorflow as tf
 from hyperopt import STATUS_OK, STATUS_FAIL
 
+#from hyperopt_optimize import plot # added for catching errors. can be erased later.
+
 import uuid
 import traceback
 import os
@@ -44,20 +46,34 @@ img_width = 224
 train_ds = tf.keras.preprocessing.image_dataset_from_directory(
     train_dir,
     seed=123,
-    image_size=(img_height, img_width))
+    image_size=(img_height, img_width),
+    batch_size=2400) # added batchsize to get all images in one batch.
 
 test_ds = tf.keras.preprocessing.image_dataset_from_directory(
     test_dir,
     seed=123,
-    image_size=(img_height, img_width))
+    image_size=(img_height, img_width),
+    batch_size=600) #added batchsize to get all images in one batch.
+
 
 for images , labels in train_ds.take(-1): # -1 for all
    numpy_imagesTrain = images.numpy()
    numpy_labelsTrain = labels.numpy()
 
+# only gets 32 ? why ? default batchsize for preprocessing.image_dataset_from_directory can be 32 ? so we need unbatch ?
+
+# for images , labels in train_ds.unbatch().take(-1): # -1 for all
+#     numpy_imagesTrain = images.numpy()
+#     numpy_labelsTrain = labels.numpy()
+
 for images , labels in test_ds.take(-1): # -1 for all
     numpy_imagesTest = images.numpy()
     numpy_labelsTest = labels.numpy()
+
+# for images , labels in test_ds.unbatch().take(-1): # -1 for all
+#     numpy_imagesTest = images.numpy()
+#     numpy_labelsTest = labels.numpy()
+
 
 x_train = numpy_imagesTrain
 y_train = numpy_labelsTrain
@@ -80,7 +96,7 @@ y_test = keras.utils.to_categorical(y_test, NB_CLASSES)
 # You may want to reduce this considerably if you don't have a killer GPU:
 #EPOCHS = 100
 #use lower epochs for testing
-EPOCHS = 4
+EPOCHS = 100  # might get loweered
 
 STARTING_L2_REG = 0.0007 # starting learning rate for L2 regularization
 
@@ -93,6 +109,7 @@ OPTIMIZER_STR_TO_CLASS = { # optimizer string to class mapping for hyperopt sear
 
 def build_and_train(hype_space, save_best_weights=False, log_for_tensorboard=False):
     """Build the deep CNN model and train it."""
+   # K.set_learning_phase(1) #keras.backend.set_learning_phase is depraecated.  ##### might be problematic. try also false ?
     K.set_learning_phase(1)
     K.set_image_data_format('channels_last')
 
@@ -151,6 +168,9 @@ def build_and_train(hype_space, save_best_weights=False, log_for_tensorboard=Fal
         tb_callback.set_model(model)
         callbacks.append(tb_callback)
 
+    # Before training plot model architecture:
+    #plot(hype_space, "BeforeTrainModelArchitecture")
+    print(model.summary()) # 80m'in üzerinde mi kontrolü yapılmalı mı ?
     # Train net:
     history = model.fit(
         [x_train],
@@ -169,7 +189,8 @@ def build_and_train(hype_space, save_best_weights=False, log_for_tensorboard=Fal
     K.set_learning_phase(0)
     #score = model.evaluate([x_test], [y_test, y_test_coarse], verbose=0) # y_test_coarse not needed
     score = model.evaluate([x_test], [y_test], verbose=0)
-    max_acc = max(history['val_fine_outputs_acc'])
+    #max_acc = max(history['val_fine_outputs_acc'])
+    max_acc = max(history['val_binary_accuracy'])
 
     model_name = "model_{}_{}".format(str(max_acc), str(uuid.uuid4())[:5])
     print("Model name: {}".format(model_name))
@@ -186,15 +207,10 @@ def build_and_train(hype_space, save_best_weights=False, log_for_tensorboard=Fal
         'loss': -max_acc,
         'real_loss': score[0],
         # Fine stats:
-        'fine_best_loss': min(history['val_fine_outputs_loss']),
-        'fine_best_accuracy': max(history['val_fine_outputs_acc']),
-        'fine_end_loss': score[1],
-        'fine_end_accuracy': score[3],
-        # Coarse stats:
-        'coarse_best_loss': min(history['val_coarse_outputs_loss']),
-        'coarse_best_accuracy': max(history['val_coarse_outputs_acc']),
-        'coarse_end_loss': score[2],
-        'coarse_end_accuracy': score[4],
+        'best_loss': min(history['val_loss']),
+        'best_accuracy': max(history['val_binary_accuracy']),
+        'end_loss': score[0],
+        'end_accuracy': score[1],
         # Misc:
         'model_name': model_name,
         'space': hype_space,
@@ -208,7 +224,7 @@ def build_and_train(hype_space, save_best_weights=False, log_for_tensorboard=Fal
     return model, model_name, result, log_path
 
 
-def build_model(hype_space):
+def build_model(hype_space): ### önemliii
     """Create model according to the hyperparameter space given."""
     print("Hyperspace:")
     print(hype_space)
@@ -229,7 +245,10 @@ def build_model(hype_space):
 
     # Core loop that stacks multiple conv+pool layers, with maybe some
     # residual connections and other fluffs:
-    n_filters = int(40 * hype_space['conv_hiddn_units_mult'])
+    #n_filters = int(40 * hype_space['conv_hiddn_units_mult']) #reduced
+
+    n_filters = int(16 * hype_space['conv_hiddn_units_mult']) #reduced
+
     for i in range(hype_space['nb_conv_pool_layers']):
         print(i)
         print(n_filters)
@@ -238,7 +257,7 @@ def build_model(hype_space):
         current_layer = convolution(current_layer, n_filters, hype_space)
         if hype_space['use_BN']:
             current_layer = bn(current_layer)
-        print(current_layer) # curerent_layer.keras is old. Use current_layer instead. Tflow 2.0 port.
+        print(current_layer) # current_layer.keras is old. Use current_layer instead. Tflow 2.0 port.
 
         deep_enough_for_res = hype_space['conv_pool_res_start_idx']
         if i >= deep_enough_for_res and hype_space['residual'] is not None:
@@ -258,7 +277,8 @@ def build_model(hype_space):
     print(current_layer) # curerent_layer.keras is old. Use current_layer instead. Tflow 2.0 port.
 
     current_layer = keras.layers.core.Dense(
-        units=int(1000 * hype_space['fc_units_1_mult']),
+        #units=int(1000 * hype_space['fc_units_1_mult']), #reduced
+        units=int(300 * hype_space['fc_units_1_mult']), #reduced
         activation=hype_space['activation'],
         kernel_regularizer=keras.regularizers.l2(
             STARTING_L2_REG * hype_space['l2_weight_reg_mult'])
@@ -270,7 +290,7 @@ def build_model(hype_space):
 
     if hype_space['one_more_fc'] is not None:
         current_layer = keras.layers.core.Dense(
-            units=int(750 * hype_space['one_more_fc']),
+            units=int(200 * hype_space['one_more_fc']),
             activation=hype_space['activation'],
             kernel_regularizer=keras.regularizers.l2(
                 STARTING_L2_REG * hype_space['l2_weight_reg_mult'])
@@ -319,8 +339,11 @@ def build_model(hype_space):
         ),
         loss='categorical_crossentropy',
         loss_weights=[1.0, hype_space['coarse_labels_weight']], #??
-        metrics=['accuracy']
-    )
+        #metrics=['accuracy']  #changed for now, https://stackoverflow.com/questions/63881363/tensorflow-fit-method-with-generator-error-attributeerror-tuple-object-has-n
+
+        metrics=['binary_accuracy']
+        #metrics=['accuracy']
+    ) 
     return model
 
 
