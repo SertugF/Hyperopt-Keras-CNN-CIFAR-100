@@ -8,10 +8,16 @@ from utils import print_json, save_json_result, load_best_hyperspace
 from keras.utils import plot_model
 import keras.backend as K
 from hyperopt import hp, tpe, fmin, Trials
+from hyperopt.base import STATUS_FAIL
 
 import pickle
 import os
 import traceback
+
+# below added in order to make sure previous sessions is closed.
+import tensorflow as tf 
+import numpy as np
+import random
 
 
 
@@ -20,15 +26,24 @@ space = {
     # This loguniform scale will multiply the learning rate, so as to make
     # it vary exponentially, in a multiplicative fashion rather than in
     # a linear fashion, to handle his exponentialy varying nature:
-    'lr_rate_mult': hp.loguniform('lr_rate_mult', -0.5, 0.5),
+    'lr_rate_mult': hp.loguniform('lr_rate_mult', -0.5, 0.5), # log uniform: Returns a value drawn according to 
+    #exp(uniform(low, high)) so that the logarithm of the return value is uniformly distributed.
+    #When optimizing, this variable is constrained to the interval [exp(low), exp(high)].
+
     # L2 weight decay:
     'l2_weight_reg_mult': hp.loguniform('l2_weight_reg_mult', -1.3, 1.3),
     # Batch size fed for each gradient update
-    'batch_size': hp.quniform('batch_size', 8, 32, 2),
+    'batch_size': hp.quniform('batch_size', 8, 16, 2), # quniform: Returns a value drawn uniformly from the 
+    #range [low, high]Returns a value like round(uniform(low, high) / q) * q
+    #Suitable for a discrete value with respect to which the objective is still somewhat "smooth", but which 
+    # should be bounded both above and below.
+
     # Choice of optimizer:
-    'optimizer': hp.choice('optimizer', ['Adam', 'Nadam', 'RMSprop']),
+    'optimizer': hp.choice('optimizer', ['Adam', 'Nadam', 'RMSprop']), # choice: Returns one of the options,
     # Coarse labels importance for weights updates:
-    'coarse_labels_weight': hp.uniform('coarse_labels_weight', 0.1, 0.7),
+    'coarse_labels_weight': hp.uniform('coarse_labels_weight', 0.1, 0.7), # uniform: Returns a value drawn uniformly
+    # between low and high.
+
     # Uniform distribution in finding appropriate dropout values, conv layers
     'conv_dropout_drop_proba': hp.uniform('conv_dropout_proba', 0.0, 0.35),
     # Uniform distribution in finding appropriate dropout values, FC layers
@@ -38,19 +53,29 @@ space = {
 
     # Use a first convolution which is special?
     'first_conv': hp.choice(
-        'first_conv', [None, hp.choice('first_conv_size', [3, 4])]
+        'first_conv', [None, hp.choice('first_conv_size', [3, 4])] , #reduced
+
+       # 'first_conv', [None, hp.choice('first_conv_size', [2, 3])] 
     ),
     # Use residual connections? If so, how many more to stack?
     'residual': hp.choice(
         'residual', [None, hp.quniform(
-            'residual_units', 1 - 0.499, 4 + 0.499, 1)]
+           # 'residual_units', 1 - 0.499, 4 + 0.499, 1)] #reduced
+            'residual_units', 1 - 0.499, 2 + 0.499, 1)]
     ),
     # Let's multiply the "default" number of hidden units:
-    'conv_hiddn_units_mult': hp.loguniform('conv_hiddn_units_mult', -0.6, 0.6),
+    #'conv_hiddn_units_mult': hp.loguniform('conv_hiddn_units_mult', -0.6, 0.6), # loguniform: Returns a value drawnReturns a
+    #value drawn according to exp(uniform(low, high)) so that the logarithm of the return value is uniformly distributed. #reduced
+
+    'conv_hiddn_units_mult': hp.loguniform('conv_hiddn_units_mult', -0.5, 0.3), # loguniform: Returns a value drawnReturns a
+
     # Number of conv+pool layers stacked:
-    'nb_conv_pool_layers': hp.choice('nb_conv_pool_layers', [2, 3]),
+    #'nb_conv_pool_layers': hp.choice('nb_conv_pool_layers', [2, 3]), #reduced
+
+    'nb_conv_pool_layers': hp.choice('nb_conv_pool_layers', [1, 2]),
     # Starting conv+pool layer for residual connections:
-    'conv_pool_res_start_idx': hp.quniform('conv_pool_res_start_idx', 0, 2, 1),
+    #'conv_pool_res_start_idx': hp.quniform('conv_pool_res_start_idx', 0, 2, 1), #reduced
+    'conv_pool_res_start_idx': hp.quniform('conv_pool_res_start_idx', 0, 1, 1),
     # The type of pooling used at each subsampling step:
     'pooling_type': hp.choice('pooling_type', [
         'max',  # Max pooling
@@ -64,10 +89,13 @@ space = {
     'res_conv_kernel_size': hp.quniform('res_conv_kernel_size', 2, 4, 1),
 
     # Amount of fully-connected units after convolution feature map
-    'fc_units_1_mult': hp.loguniform('fc_units_1_mult', -0.6, 0.6),
+    #'fc_units_1_mult': hp.loguniform('fc_units_1_mult', -0.6, 0.6), # reduced
+    'fc_units_1_mult': hp.loguniform('fc_units_1_mult', -0.5, 0.3), # reduced
     # Use one more FC layer at output
     'one_more_fc': hp.choice(
-        'one_more_fc', [None, hp.loguniform('fc_units_2_mult', -0.6, 0.6)]
+        #'one_more_fc', [None, hp.loguniform('fc_units_2_mult', -0.6, 0.6)] #reduced
+
+        'one_more_fc', [None, hp.loguniform('fc_units_2_mult', -0.5, 0.3)] 
     ),
     # Activations that are used everywhere
     'activation': hp.choice('activation', ['relu', 'elu'])
@@ -92,7 +120,8 @@ def plot_base_model():
     space_base_demo_to_plot = {
         'lr_rate_mult': 1.0,
         'l2_weight_reg_mult': 1.0,
-        'batch_size': 300,
+        #'batch_size': 300, # reduce
+        'batch_size': 20,
         'optimizer': 'Nadam',
         'coarse_labels_weight': 0.2,
         'conv_dropout_drop_proba': 0.175,
@@ -100,9 +129,9 @@ def plot_base_model():
         'use_BN': True,
 
         #'first_conv': 4, # reduce
-        'first_conv': 3,
+        'first_conv': 2,
         #'residual': 4, # reduce
-        'residual': 2,
+        'residual': 1,
         'conv_hiddn_units_mult': 1.0,
         #'nb_conv_pool_layers': 3,
         'nb_conv_pool_layers': 2,
@@ -129,6 +158,15 @@ def plot_best_model():
     print("Best hyperspace yet:")
     print_json(space_best_model)
     plot(space_best_model, "model_best")
+    
+
+# new fuction for resetting seeds
+def reset_seeds():
+    np.random.seed(1)
+    random.seed(4)
+
+    tf.random.set_seed(5)
+    print("Seeds reset")
 
 
 def optimize_cnn(hype_space):
@@ -139,8 +177,17 @@ def optimize_cnn(hype_space):
         # Save training results to disks with unique filenames
         save_json_result(model_name, result)
 
-        K.clear_session()
+        # K.clear_session() # old implementation for cleraing sessions so model doesnt overload memory
+        # del model
+
+        # new version of clearing sessions , https://stackoverflow.com/questions/58453793/the-clear-session-method-of-keras-backend-does-not-clean-up-the-fitting-data
         del model
+        K.clear_session()
+        tf.compat.v1.reset_default_graph()
+        reset_seeds()
+
+        # new version end here.
+
 
         return result
 
@@ -198,7 +245,7 @@ if __name__ == "__main__":
           "a quite normal model (or a bit more huge), "
           "and then the best model...")
 
-    plot_base_model()
+    #plot_base_model() disabled for now
 
     print("Now, we train many models, one after the other. "
           "Note that hyperopt has support for cloud "
@@ -215,7 +262,7 @@ if __name__ == "__main__":
         # Optimize a new model with the TPE Algorithm:
         print("OPTIMIZING NEW MODEL:")
         try:
-            run_a_trial()
+            run_a_trial() # main fonk which does stuff.
         except Exception as err:
             err_str = str(err)
             print(err_str)
