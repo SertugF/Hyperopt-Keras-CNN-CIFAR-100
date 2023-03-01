@@ -1,8 +1,15 @@
-# Hyperopt for solving CIFAR-100 with a convolutional neural network (CNN) built with Keras and TensorFlow, GPU backend
+# Hyperopt for solving local dataset with a convolutional neural network (CNN) built with Keras and TensorFlow, GPU backend
 
 This project acts as both a tutorial and a demo to using Hyperopt with Keras, TensorFlow and TensorBoard. Not only we try to find the best hyperparameters for the given hyperspace, but also we represent the neural network architecture as hyperparameters that can be tuned. This automates the process of searching for the best neural architecture configuration and hyperparameters.
 
-Here, we are meta-optimizing a neural net and its architecture on the CIFAR-100 dataset (100 fine labels), a computer vision task. This code could be easily transferred to another vision dataset or even to another machine learning task.
+Here, we are meta-optimizing a neural net and its architecture on a local dataset (2 labels, binary), a computer vision task. This code could be easily transferred to another vision dataset or even to another machine learning task. 
+
+**Beware this is a modified version of (https://github.com/Vooban/Hyperopt-Keras-CNN-CIFAR-100). Major changes are :**
+
+* Less depth for search space (Less layers and hidden neourons for models)
+* Needs local data (Use your own data instead of CIFAR-100, already setup for binary classification for 224x224 pixel images.)
+* Might need changing parameters depending on the data. Check inside neural_net.py.(number of channels, number of classes etc.)
+* Works with tensorflow 2.0+
 
 ## How Hyperopt works
 
