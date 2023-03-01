@@ -37,8 +37,8 @@ NB_CLASSES = 2 # 10 change with 2 our classes. 0 = haploid and 1 = diploid
 
 
 
-train_dir = 'Data/train/'
-test_dir = 'Data/test/'
+train_dir = 'Data/trainV2/'
+test_dir = 'Data/testV2/'
 
 img_height = 224
 img_width = 224
