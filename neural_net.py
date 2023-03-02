@@ -96,7 +96,10 @@ y_test = keras.utils.to_categorical(y_test, NB_CLASSES)
 # You may want to reduce this considerably if you don't have a killer GPU:
 #EPOCHS = 100
 #use lower epochs for testing
-EPOCHS = 40 # might get loweered
+EPOCHS = 40 # might get loweered 
+
+# Test
+#EPOCHS = 2 # might get loweered 
 
 STARTING_L2_REG = 0.0007 # starting learning rate for L2 regularization
 
