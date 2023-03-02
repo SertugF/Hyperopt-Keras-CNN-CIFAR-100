@@ -19,6 +19,8 @@ import tensorflow as tf
 import numpy as np
 import random
 
+#from numba import cuda , cuda reset is not working properly loses context
+import gc
 
 
 
@@ -186,7 +188,11 @@ def optimize_cnn(hype_space):
         tf.compat.v1.reset_default_graph()
         reset_seeds()
 
-        # new version end here.
+        # make sure the gpu memory is freed
+       
+        gc.collect()
+
+
 
 
         return result
@@ -194,6 +200,12 @@ def optimize_cnn(hype_space):
     except Exception as err:
         try:
             K.clear_session()
+            # device = cuda.get_current_device()
+            # device.reset()
+
+            gc.collect()
+               
+            
         except:
             pass
         err_str = str(err)
@@ -237,6 +249,9 @@ def run_a_trial():
 
     print("\nOPTIMIZATION STEP COMPLETE.\n")
 
+    # make sure memory is freed
+    gc.collect()
+  
 
 if __name__ == "__main__":
     """Plot the model and run the optimisation forever (and saves results)."""
@@ -272,3 +287,9 @@ if __name__ == "__main__":
         # Replot best model since it may have changed:
         print("PLOTTING BEST MODEL:")
         plot_best_model()
+
+        # device = cuda.get_current_device()
+        # device.reset()
+
+        gc.collect()
+
